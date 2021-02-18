@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:netsuite="http://www.mulesoft.org/schema/mule/netsuite"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/netsuite http://www.mulesoft.org/schema/mule/netsuite/current/mule-netsuite.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="11c6a859-c649-4ba6-b727-4c802306ece1" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<netsuite:rest-config name="NetSuite_Rest_config" doc:name="NetSuite Rest config" doc:id="e29b6892-245e-4663-8e4b-87c2b4650971" >
+		<netsuite:restlet-token-connection consumerKey="214a8ee0d9d4cfb2c464898bec4327ad32c8151b35fb6791edc1e112c4bec4ee" consumerSecret="711724f71923cce7894de599256bbf170a6c666dea494e7ce2d9d4500570db3a" tokenId="ebf57eab8f583d643eff29ac7283567c49109641402447f6bb62cc553adc03b8" tokenSecret="cee88101e6b0138fc84e3d6f7cb8f1752220a997c5ee76fbc6cd0b6157471ba4" account="5691377_SB1" />
+	</netsuite:rest-config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="5c535a97-d58e-445e-84ff-493ef69302e8" >
+		<db:generic-connection url="jdbc:snowflake://eo92918.west-us-2.azure.snowflakecomputing.com/?user=yaqoobjamal&amp;password=Zxcv@1234&amp;db=RECORDS&amp;schema=public" driverClassName="net.snowflake.client.jdbc.SnowflakeDriver" user="yaqoobjamal" password="Zxcv@1234"/>
+	</db:config>
+	<flow name="netsuit-snowflakes-integrationFlow1" doc:id="019bc1a1-1f4c-4173-8d34-909497ffcf62" >
+		<http:listener doc:name="/" doc:id="4ae61783-0985-4af3-808f-d1783c9638de" config-ref="HTTP_Listener_config" path="/"/>
+		<parse-template doc:name="Parse Template" doc:id="89bb045b-a152-4594-b3ae-65ff6b0b800d" location="form.html"/>
+	</flow>
+	<flow name="netsuit-snowflakes-integrationFlow" doc:id="f2325f3e-ca7b-4fd6-a698-85b31d4bf818" >
+		<http:listener doc:name="/get" doc:id="3a326849-41d5-4dc9-b76f-d4944cdd7cf2" config-ref="HTTP_Listener_config" path="/get"/>
+		<ee:transform doc:name="Transform GET Input" doc:id="3831ed1c-d3cb-4831-ba6d-ac926cdba883" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "id": attributes.queryParams.id,
+    "recordtype": attributes.queryParams.recordtype
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<netsuite:call-restlet-get doc:name="Call RESTlet (GET)" doc:id="cfeee208-cb71-41b6-8870-ed069ff69d13" script="2231" deploy="1" config-ref="NetSuite_Rest_config"/>
+		<ee:transform doc:name="Transform Input For DB Insert" doc:id="fd5c74ea-9cfa-4a50-9207-4bc8680f95b5" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json 
+---
+read(payload[0][0],"application/json")]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<db:bulk-insert doc:name="Bulk Insert In SALES_ORDER.PUBLIC.COMPANY_SALES_RECORD Table" doc:id="0cbad93c-883c-4a12-9f49-c78a314317bd" config-ref="Database_Config">
+			<db:sql ><![CDATA[INSERT INTO SALES_ORDER.PUBLIC.COMPANY_SALES_RECORD (CUSTOMER,NUMBER) VALUES (:customer,:number)]]></db:sql>
+		</db:bulk-insert>
+		<ee:transform doc:name="Set Output Payload" doc:id="2b2de87d-d1ef-4e1f-a6f4-66f18ef05934" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	'Status': if 
+        (sizeOf(payload) > 0)
+             "Data Inserted Successfully In Snowflakes SALES_ORDER.PUBLIC.COMPANY_SALES_RECORD Table"
+              else 
+              "Data is not Inserted in SALES_ORDER.PUBLIC.COMPANY_SALES_RECORD Table",
+	'Rows Affected': sizeOf(payload)
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+</mule>
